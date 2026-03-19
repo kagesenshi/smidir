@@ -25,6 +25,8 @@ To use `smidir`, you need the following tools installed on your system:
 
 ## Installation
 
+### Local Installation
+
 It is recommended to use `uv` for managing the environment and running the tool:
 
 ```bash
@@ -35,6 +37,29 @@ Or install it in your environment:
 
 ```bash
 pip install .
+```
+
+A pre-built image is available at `ghcr.io/kagesenshi/smidir:latest`. This image includes all necessary system dependencies (Pandoc, LibreOffice, Mermaid CLI).
+
+#### Using Docker
+
+```bash
+docker run --rm \
+  -u $(id -u):$(id -g) \
+  -v $(pwd):/data \
+  -w /data \
+  ghcr.io/kagesenshi/smidir:latest [arguments]
+```
+
+#### Using Podman (Rootless)
+
+```bash
+podman run --rm \
+  --userns keep-id \
+  --user ${UID} \
+  -v $(pwd):/data \
+  -w /data \
+  ghcr.io/kagesenshi/smidir:latest [arguments]
 ```
 
 ## Project Structure
