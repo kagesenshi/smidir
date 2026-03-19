@@ -27,6 +27,7 @@ import yaml
 import re
 import tempfile
 import shutil
+import os
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
@@ -37,7 +38,7 @@ def get_base_dir() -> Path:
 
 def check_dependencies():
     """Checks for the existence of required system commands."""
-    dependencies = ["pandoc", "libreoffice", "npx"]
+    dependencies = ["pandoc", "libreoffice", "npx", "pdf2svg"]
     missing = []
     for dep in dependencies:
         if shutil.which(dep) is None:
@@ -147,8 +148,7 @@ def main():
     parser.add_argument(
         "-f",
         "--vars-file",
-        default="vars.yml",
-        help="Location of vars.yml metadata file (default: vars.yml)",
+        help="Location of vars.yml metadata file (default: {document_dir}/vars.yml)",
     )
     parser.add_argument(
         "--format",
@@ -195,10 +195,23 @@ def main():
         sys.exit(1)
 
     # Load variables from vars.yml
-    vars_file = Path(args.vars_file)
+    if args.vars_file:
+        vars_file = Path(args.vars_file)
+    else:
+        # Default to vars.yml in document directory
+        vars_file = doc_dir / "vars.yml"
+
     if not vars_file.exists():
-        print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
-        sys.exit(1)
+        if args.vars_file:
+            print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            # If not explicitly provided and doesn't exist in doc_dir, ignore or warning?
+            # User said "default to document_dir", implying it should be there.
+            # But making it optional is usually better. However, the existing code
+            # exits if it's missing. I'll stick to exiting if the resolved one is missing.
+            print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
+            sys.exit(1)
 
     with open(vars_file, "r", encoding="utf-8") as f:
         global_vars = yaml.safe_load(f) or {}
@@ -257,15 +270,17 @@ def main():
         sys.exit(1)
 
     # Write rendered content to a temporary file
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
-        # Re-add metadata as YAML frontmatter for pandoc if needed (e.g. for title)
-        tmp.write("---\n")
-        yaml.dump(metadata, tmp)
-        tmp.write("---\n\n")
-        tmp.write(rendered_body)
-        tmp_path = tmp.name
-
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
+            # Re-add metadata as YAML frontmatter for pandoc if needed (e.g. for title)
+            tmp.write("---\n")
+            yaml.dump(metadata, tmp)
+            tmp.write("---\n\n")
+            tmp.write(rendered_body)
+            tmp_path = tmp.name
+
+        # Check if output is PDF
         # Check if output is PDF
         is_pdf = args.output.lower().endswith(".pdf")
         pandoc_output = args.output
@@ -280,11 +295,13 @@ def main():
             str(template_file),
             tmp_path,
             "-o",
+            pandoc_output,
             "--metadata-file",
             str(vars_file),
             "--resource-path",
             f".:{doc_dir}",
         ]
+
 
         # Add default filters from resources/filters
         filters_dir = get_resource_dir("filters")
@@ -334,7 +351,7 @@ def main():
         )
         sys.exit(1)
     finally:
-        if Path(tmp_path).exists():
+        if tmp_path and Path(tmp_path).exists():
             Path(tmp_path).unlink()
 
 
