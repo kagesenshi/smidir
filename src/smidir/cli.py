@@ -26,12 +26,30 @@ import sys
 import yaml
 import re
 import tempfile
+import shutil
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 
 def get_base_dir() -> Path:
     return Path(__file__).parent.resolve()
+
+
+def check_dependencies():
+    """Checks for the existence of required system commands."""
+    dependencies = ["pandoc", "libreoffice", "npx"]
+    missing = []
+    for dep in dependencies:
+        if shutil.which(dep) is None:
+            missing.append(dep)
+
+    if missing:
+        print(
+            f"Error: Missing required system dependencies: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        print("Please ensure they are installed and in your PATH.", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_resource_dir(resource_type: str) -> Path:
@@ -97,6 +115,7 @@ def parse_frontmatter(content_file: Path):
 
 
 def main():
+    check_dependencies()
     parser = argparse.ArgumentParser(
         description="Generate ODT/PDF document using pandoc"
     )
