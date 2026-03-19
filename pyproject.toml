@@ -1,0 +1,20 @@
+[project]
+name = "smidir"
+version = "0.1.0"
+description = "ODT/PDF generator using Markdown, Libreoffice, Pandoc & MermaidJS"
+readme = "README.md"
+authors = [
+    { name = "Izhar Firdaus", email = "kagesenshi.87@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+smidir = "smidir.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.6,<0.11.0"]
+build-backend = "uv_build"
