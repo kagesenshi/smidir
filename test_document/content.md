@@ -8,7 +8,7 @@ date: 2026-03-19
 
 This section contains a Mermaid diagram to test the diagram generation feature.
 
-```mermaid
+```mermaid {png_width=3000}
 graph TD;
     A[Start] --> B{Is it working?};
     B -- Yes --> C[Celebrate];

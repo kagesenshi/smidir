@@ -24,7 +24,7 @@ function CodeBlock(block)
     
     -- Check if file already exists
     if not file_exists(filename) then
-      local width = block.attributes['width'] or '800'
+      local png_width = block.attributes['png_width'] or '800'
       
       -- We'll use a temporary file for the mermaid code
       local mmd_file = os.tmpname()
@@ -38,9 +38,9 @@ function CodeBlock(block)
       
       -- Step 1: Generate PDF using mmdc
       -- The command specified by user: npx -p @mermaid-js/mermaid-cli mmdc
-      local mmdc_cmd = string.format('npx -p @mermaid-js/mermaid-cli mmdc -i %s -o %s -w %s --pdfFit', mmd_file, pdf_file, width)
+      local mmdc_cmd = string.format('npx -p @mermaid-js/mermaid-cli mmdc -i %s -o %s -w %s --pdfFit', mmd_file, pdf_file, png_width)
       
-      print('Generating mermaid PDF: ' .. pdf_file .. ' (width: ' .. width .. ')')
+      print('Generating mermaid PDF: ' .. pdf_file .. ' (png_width: ' .. png_width .. ')')
       local mmdc_success = os.execute(mmdc_cmd)
       
       if mmdc_success then
@@ -69,9 +69,14 @@ function CodeBlock(block)
       end
     end
     
+    -- Set default width for the image if not specified
+    if not block.attributes['width'] then
+      block.attributes['width'] = '50%'
+    end
+    
     -- Return an image para
     return pandoc.Para({
-      pandoc.Image({pandoc.Str(content)}, filename, "")
+      pandoc.Image({pandoc.Str(content)}, filename, "", block.attr)
     })
   end
 end
