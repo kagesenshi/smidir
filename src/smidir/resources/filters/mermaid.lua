@@ -20,7 +20,9 @@ function CodeBlock(block)
   if block.classes:includes('mermaid') then
     local content = block.text
     local hash = get_hash(content)
-    local filename = img_dir .. '/' .. hash .. '.svg'
+    local format = block.attributes['format'] or 'svg'
+    local extension = '.' .. format
+    local filename = img_dir .. '/' .. hash .. extension
     
     -- Check if file already exists
     if not file_exists(filename) then
@@ -32,39 +34,38 @@ function CodeBlock(block)
       f:write(content)
       f:close()
       
-      -- Use a temporary file for the intermediate PDF
-      -- Note: os.tmpname() might not have .pdf extension, so we append it
-      local pdf_file = os.tmpname() .. '.pdf'
+      local success = false
       
-      -- Step 1: Generate PDF using mmdc
-      -- The command specified by user: npx -p @mermaid-js/mermaid-cli mmdc
-      local mmdc_cmd = string.format('npx -p @mermaid-js/mermaid-cli mmdc -i %s -o %s -w %s --pdfFit', mmd_file, pdf_file, png_width)
-      
-      print('Generating mermaid PDF: ' .. pdf_file .. ' (png_width: ' .. png_width .. ')')
-      local mmdc_success = os.execute(mmdc_cmd)
-      
-      if mmdc_success then
-        -- Step 2: Convert PDF to SVG for better compatibility
-        local pdf2svg_cmd = string.format('pdf2svg %s %s', pdf_file, filename)
+      if format == 'svg' then
+        -- Current method: mmd -> PDF -> SVG
+        local pdf_file = os.tmpname() .. '.pdf'
         
-        print('Converting PDF to SVG: ' .. filename)
-        local pdf2svg_success = os.execute(pdf2svg_cmd)
+        -- Step 1: Generate PDF using mmdc
+        local mmdc_cmd = string.format('npx -p @mermaid-js/mermaid-cli mmdc -i %s -o %s --pdfFit', mmd_file, pdf_file)
+        print('Generating mermaid PDF for SVG output: ' .. pdf_file)
+        local mmdc_success = os.execute(mmdc_cmd)
         
-        -- Cleanup temporary files
-        os.remove(mmd_file)
-        os.remove(pdf_file)
-        
-        if not pdf2svg_success then
-          io.stderr:write("Error: Failed to execute pdf2svg for " .. filename .. "\n")
-          return block -- Fallback to code block on error
+        if mmdc_success then
+          -- Step 2: Convert PDF to SVG for better compatibility
+          local pdf2svg_cmd = string.format('pdf2svg %s %s', pdf_file, filename)
+          print('Converting PDF to SVG: ' .. filename)
+          success = os.execute(pdf2svg_cmd)
+          os.remove(pdf_file)
+        else
+          os.remove(pdf_file)
         end
       else
-        -- Cleanup temporary file
-        os.remove(mmd_file)
-        -- Termporary PDF might not have been created if mmdc failed
-        os.remove(pdf_file)
-        
-        io.stderr:write("Error: Failed to execute mmdc for " .. filename .. "\n")
+        -- Default: Generate PNG directly using mmdc
+        local mmdc_cmd = string.format('npx -p @mermaid-js/mermaid-cli mmdc -i %s -o %s -w %s', mmd_file, filename, png_width)
+        print('Generating mermaid PNG: ' .. filename .. ' (png_width: ' .. png_width .. ')')
+        success = os.execute(mmdc_cmd)
+      end
+      
+      -- Cleanup temporary file
+      os.remove(mmd_file)
+      
+      if not success then
+        io.stderr:write("Error: Failed to generate mermaid " .. format .. " for " .. filename .. "\n")
         return block -- Fallback to code block on error
       end
     end
