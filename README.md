@@ -2,7 +2,7 @@
 
 ODT/PDF generator using Markdown, Libreoffice, Pandoc & MermaidJS.
 
-`smidir` is a command-line tool designed to streamline the generation of documents from Markdown sources using Pandoc and LibreOffice for high-quality ODT and PDF output. It is designed to be generic and can be used for any document structure that follows its simple conventions.
+`smidir` (derived from the Icelandic word *smiðir*, meaning "smiths" or "builders") is a command-line tool designed to streamline the generation of documents from Markdown sources using Pandoc and LibreOffice for high-quality ODT and PDF output. It is designed to be generic and can be used for any document structure that follows its simple conventions.
 
 ## Features
 
