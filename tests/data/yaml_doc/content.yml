@@ -1,0 +1,5 @@
+vars:
+  title: "Main Title"
+contents:
+  - intro.md
+  - features/

@@ -115,6 +115,110 @@ def parse_frontmatter(content_file: Path):
     return metadata, content
 
 
+def render_markdown(body: str, context: dict, doc_dir: Path) -> str:
+    """Renders markdown body using Jinja2 and legacy ${VAR} replacement."""
+    env = Environment(loader=FileSystemLoader(str(doc_dir)))
+    try:
+        jinja_template = env.from_string(body)
+        rendered_body = jinja_template.render(**context)
+
+        # Legacy support for ${VAR}
+        def legacy_replace(match):
+            name = match.group(1).upper()
+            return str(context.get(name, match.group(0)))
+
+        rendered_body = re.sub(r"\$\{(.*?)\}", legacy_replace, rendered_body)
+        return rendered_body
+    except Exception as e:
+        print(f"Error during template preprocessing: {e}", file=sys.stderr)
+        raise
+
+
+def resolve_content(doc_dir: Path, inherited_vars: dict = None) -> tuple[dict, str]:
+    """
+    Recursively resolves directory content.
+    Returns (metadata, rendered_body).
+    """
+    if inherited_vars is None:
+        inherited_vars = {}
+
+    local_vars = {}
+    # Load vars.yml in doc_dir
+    vars_yml = doc_dir / "vars.yml"
+    if vars_yml.exists():
+        with open(vars_yml, "r", encoding="utf-8") as f:
+            local_vars.update(yaml.safe_load(f) or {})
+
+    # Check for content.md or content.yml/yaml
+    content_md = doc_dir / "content.md"
+    content_yml = doc_dir / "content.yml"
+    if not content_yml.exists():
+        content_yml = doc_dir / "content.yaml"
+
+    current_context = {**inherited_vars, **local_vars}
+
+    if content_md.exists():
+        metadata, body = parse_frontmatter(content_md)
+        # Update context with frontmatter for this file
+        current_context.update(metadata)
+        # Uppercase versions for ${VAR} legacy support
+        legacy_vars = {
+            k.upper(): v for k, v in current_context.items() if isinstance(k, str)
+        }
+        current_context.update(legacy_vars)
+        rendered_body = render_markdown(body, current_context, doc_dir)
+        return metadata, rendered_body
+
+    if content_yml.exists():
+        with open(content_yml, "r", encoding="utf-8") as f:
+            yml_data = yaml.safe_load(f) or {}
+
+        # vars in content.yml are directory defaults
+        content_vars = yml_data.get("vars", {})
+        # Note: vars in content_yml should be lower priority than vars.yml according to plan
+        # We can adjust: inherited_vars <- content_vars <- vars_yml
+        current_context = {**inherited_vars, **content_vars, **local_vars}
+
+        contents = yml_data.get("contents", [])
+        bodies = []
+        for item in contents:
+            item_path = doc_dir / item
+            if item_path.is_file() and item_path.suffix == ".md":
+                meta, body = parse_frontmatter(item_path)
+                # For individual files, we use their own frontmatter but current_context as base
+                file_context = {**current_context, **meta}
+                legacy_vars = {
+                    k.upper(): v for k, v in file_context.items() if isinstance(k, str)
+                }
+                file_context.update(legacy_vars)
+                bodies.append(render_markdown(body, file_context, doc_dir))
+            elif item_path.is_dir():
+                _, body = resolve_content(item_path, current_context)
+                bodies.append(body)
+
+        # Metadata from content.yml (everything except 'contents' and 'vars'?)
+        # User said "no other keys are supported", but we might have metadata like version/title.
+        # Actually, let's treat yml_data as metadata too, excluding contents/vars.
+        metadata = {k: v for k, v in yml_data.items() if k not in ["contents", "vars"]}
+        return metadata, "\n\n".join(bodies)
+
+    # If no content.* file, merge all markdown files in directory
+    md_files = sorted(
+        [f for f in doc_dir.glob("*.md") if f.name not in ["content.md", "README.md"]]
+    )
+    bodies = []
+    for md_file in md_files:
+        meta, body = parse_frontmatter(md_file)
+        file_context = {**current_context, **meta}
+        legacy_vars = {
+            k.upper(): v for k, v in file_context.items() if isinstance(k, str)
+        }
+        file_context.update(legacy_vars)
+        bodies.append(render_markdown(body, file_context, doc_dir))
+
+    return {}, "\n\n".join(bodies)
+
+
 def main():
     check_dependencies()
     parser = argparse.ArgumentParser(
@@ -184,62 +288,49 @@ def main():
 
     base_dir = get_base_dir()
 
-    # Resolve document content.md
+    # Resolve document content
     doc_dir = Path(args.document_dir).resolve()
-    content_file = doc_dir / "content.md"
-    if not content_file.exists():
-        print(
-            f"Error: Content file not found at {content_file}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
-    # Load variables from vars.yml
+    # Load global variables from --vars-file (highest priority)
+    global_vars = {}
     if args.vars_file:
         vars_file = Path(args.vars_file)
+        if not vars_file.exists():
+            print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
+            sys.exit(1)
+        with open(vars_file, "r", encoding="utf-8") as f:
+            global_vars = yaml.safe_load(f) or {}
     else:
-        # Default to vars.yml in document directory
+        # If not provided, we will check vars.yml in the document directory
+        # but resolve_content will handle directory-level vars.yml too.
+        # The top-level vars.yml is still a special case for command line compatibility if it was used before.
+        # Actually, let's keep it consistent: CLI overrides directory level.
         vars_file = doc_dir / "vars.yml"
+        # We don't exit here anymore if it doesn't exist, as it's optional.
 
-    if not vars_file.exists():
-        if args.vars_file:
-            print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
-            sys.exit(1)
-        else:
-            # If not explicitly provided and doesn't exist in doc_dir, ignore or warning?
-            # User said "default to document_dir", implying it should be there.
-            # But making it optional is usually better. However, the existing code
-            # exits if it's missing. I'll stick to exiting if the resolved one is missing.
-            print(f"Error: Variables file not found at {vars_file}", file=sys.stderr)
-            sys.exit(1)
+    # Resolve content recursively
+    metadata, rendered_body = resolve_content(doc_dir, global_vars)
 
-    with open(vars_file, "r", encoding="utf-8") as f:
-        global_vars = yaml.safe_load(f) or {}
-
-    # Parse frontmatter and body
-    metadata, body = parse_frontmatter(content_file)
+    if not rendered_body and not metadata:
+        print(f"Error: No content found in {doc_dir}", file=sys.stderr)
+        sys.exit(1)
 
     if args.format and args.output:
         parser.error("Argument --format cannot be used together with --output")
 
+    # Merge variables for output filename and template lookup
+    # CLI global vars should have highest priority
+    all_vars = {**metadata, **global_vars}
+
     # Resolve output filename
     if not args.output:
-        version = metadata.get("version", "1")
+        version = all_vars.get("version", "1")
         fmt = args.format.lstrip(".") if args.format else "odt"
         args.output = f"{doc_dir.name}-v{version}.{fmt}"
 
-    # Merge variables (CLI/metadata file overrides frontmatter)
-    # Also uppercase keys for compatibility with ${VAR} style in lua if needed,
-    # but we will use Jinja2.
-    all_vars = {**metadata, **global_vars}
-
-    # Uppercase versions for ${VAR} legacy support
-    legacy_vars = {k.upper(): v for k, v in all_vars.items() if isinstance(k, str)}
-    all_vars.update(legacy_vars)
-
     # Resolve template
     if not args.template:
-        args.template = metadata.get("default_template", "blank.odt")
+        args.template = all_vars.get("default_template", "blank.odt")
 
     template_file = Path(args.template)
     if not template_file.exists():
@@ -249,40 +340,24 @@ def main():
             print(f"Error: Template file not found: {args.template}", file=sys.stderr)
             sys.exit(1)
 
-    # Preprocess body using Jinja2
-    env = Environment(loader=FileSystemLoader(str(doc_dir)))
-
-    # We want to support both Jinja2 tags and ${VAR} style replacements.
-    # We can use Jinja2 for the tags, then a simple regex/replace for ${VAR}.
-    try:
-        jinja_template = env.from_string(body)
-        rendered_body = jinja_template.render(**all_vars)
-
-        # Legacy support for ${VAR}
-        def legacy_replace(match):
-            name = match.group(1).upper()
-            return str(all_vars.get(name, match.group(0)))
-
-        rendered_body = re.sub(r"\$\{(.*?)\}", legacy_replace, rendered_body)
-
-    except Exception as e:
-        print(f"Error during template preprocessing: {e}", file=sys.stderr)
-        sys.exit(1)
-
     # Write rendered content to a temporary file
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             # Re-add metadata as YAML frontmatter for pandoc if needed (e.g. for title)
             tmp.write("---\n")
-            yaml.dump(metadata, tmp)
+            # Filter metadata to keep it clean
+            pandoc_metadata = {
+                k: v for k, v in all_vars.items() if not k.isupper()
+            }
+            yaml.dump(pandoc_metadata, tmp)
             tmp.write("---\n\n")
             tmp.write(rendered_body)
             tmp_path = tmp.name
 
-        # Check if output is PDF
-        # Check if output is PDF
+        # Check if output is PDF or HTML
         is_pdf = args.output.lower().endswith(".pdf")
+        is_html = args.output.lower().endswith(".html")
         pandoc_output = args.output
         if is_pdf:
             # Generate intermediate ODT first
@@ -291,16 +366,20 @@ def main():
         # Construct pandoc command
         cmd = [
             "pandoc",
-            "--reference-doc",
-            str(template_file),
             tmp_path,
             "-o",
             pandoc_output,
-            "--metadata-file",
-            str(vars_file),
             "--resource-path",
             f".:{doc_dir}",
         ]
+
+        if not is_html:
+            cmd.extend(["--reference-doc", str(template_file)])
+        elif template_file.suffix == ".html":
+            cmd.extend(["--template", str(template_file)])
+
+        if vars_file and vars_file.exists():
+            cmd.extend(["--metadata-file", str(vars_file)])
 
 
         # Add default filters from resources/filters

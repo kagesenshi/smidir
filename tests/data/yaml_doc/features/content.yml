@@ -1,0 +1,5 @@
+vars:
+  description: "Description from nested content.yml"
+contents:
+  - feat2.md
+  - feat1.md
