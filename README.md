@@ -56,7 +56,7 @@ docker run --rm \
 ```bash
 podman run --rm \
   --userns keep-id \
-  --user ${UID} \
+  --user `id -u` \
   -v $(pwd):/data \
   -w /data \
   ghcr.io/kagesenshi/smidir:latest [arguments]
