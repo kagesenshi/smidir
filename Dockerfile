@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxtst6 \
     libgl1 \
+    default-jre-headless \
+    libreoffice-java-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv

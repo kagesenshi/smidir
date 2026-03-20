@@ -29,6 +29,7 @@ def test_resolve_content_yaml_inheritance(test_data_dir):
     # Sub directory
     sub_dir = test_data_dir / "sub"
     sub_dir.mkdir()
+    (sub_dir / "content.yml").write_text("contents:\n  - page.md", encoding="utf-8")
     (sub_dir / "page.md").write_text("# {{ title }} in {{ loc }}", encoding="utf-8")
     (sub_dir / "vars.yml").write_text("loc: sub", encoding="utf-8")
     
@@ -61,14 +62,13 @@ def test_cli_html_output(test_data_dir):
     assert "Hello HTML" in content
     assert "<h1" in content
 
-def test_directory_merging_auto(test_data_dir):
-    # No content.yml/md, should merge all .md files
+def test_directory_merging_no_yml(test_data_dir):
+    # No content.yml/md, should return empty
     (test_data_dir / "b.md").write_text("Body B", encoding="utf-8")
     (test_data_dir / "a.md").write_text("Body A", encoding="utf-8")
     
     _, body = resolve_content(test_data_dir)
-    # Should be sorted: a.md then b.md
-    assert "Body A\n\nBody B" in body
+    assert body == ""
 
 def test_resolve_content_yml_missing_contents(test_data_dir):
     (test_data_dir / "content.yml").write_text("vars:\n  a: b", encoding="utf-8")

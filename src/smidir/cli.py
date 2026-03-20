@@ -157,18 +157,6 @@ def resolve_content(doc_dir: Path, inherited_vars: dict = None) -> tuple[dict, s
 
     current_context = {**inherited_vars, **local_vars}
 
-    if content_md.exists():
-        metadata, body = parse_frontmatter(content_md)
-        # Update context with frontmatter for this file
-        current_context.update(metadata)
-        # Uppercase versions for ${VAR} legacy support
-        legacy_vars = {
-            k.upper(): v for k, v in current_context.items() if isinstance(k, str)
-        }
-        current_context.update(legacy_vars)
-        rendered_body = render_markdown(body, current_context, doc_dir)
-        return metadata, rendered_body
-
     if content_yml.exists():
         with open(content_yml, "r", encoding="utf-8") as f:
             yml_data = yaml.safe_load(f) or {}
@@ -187,6 +175,39 @@ def resolve_content(doc_dir: Path, inherited_vars: dict = None) -> tuple[dict, s
 
         bodies = []
         for item in contents:
+            if item == ".":
+                # Expand current directory
+                items = sorted(doc_dir.iterdir())
+                for sub_item in items:
+                    if sub_item.name in [
+                        "content.yml",
+                        "content.yaml",
+                        "vars.yml",
+                        "content.md",
+                        "README.md",
+                    ]:
+                        continue
+                    if sub_item.is_file() and sub_item.suffix == ".md":
+                        meta, body = parse_frontmatter(sub_item)
+                        file_context = {**current_context, **meta}
+                        legacy_vars = {
+                            k.upper(): v
+                            for k, v in file_context.items()
+                            if isinstance(k, str)
+                        }
+                        file_context.update(legacy_vars)
+                        bodies.append(render_markdown(body, file_context, doc_dir))
+                    elif sub_item.is_dir():
+                        # Only include if it has content.yml/yaml or content.md
+                        if (
+                            (sub_item / "content.yml").exists()
+                            or (sub_item / "content.yaml").exists()
+                            or (sub_item / "content.md").exists()
+                        ):
+                            _, body = resolve_content(sub_item, current_context)
+                            bodies.append(body)
+                continue
+
             item_path = doc_dir / item
             if not item_path.exists():
                 raise FileNotFoundError(f"Content item not found: {item_path}")
@@ -212,21 +233,19 @@ def resolve_content(doc_dir: Path, inherited_vars: dict = None) -> tuple[dict, s
         metadata = {k: v for k, v in yml_data.items() if k not in ["contents", "vars"]}
         return metadata, "\n\n".join(bodies)
 
-    # If no content.* file, merge all markdown files in directory
-    md_files = sorted(
-        [f for f in doc_dir.glob("*.md") if f.name not in ["content.md", "README.md"]]
-    )
-    bodies = []
-    for md_file in md_files:
-        meta, body = parse_frontmatter(md_file)
-        file_context = {**current_context, **meta}
+    if content_md.exists():
+        metadata, body = parse_frontmatter(content_md)
+        # Update context with frontmatter for this file
+        current_context.update(metadata)
+        # Uppercase versions for ${VAR} legacy support
         legacy_vars = {
-            k.upper(): v for k, v in file_context.items() if isinstance(k, str)
+            k.upper(): v for k, v in current_context.items() if isinstance(k, str)
         }
-        file_context.update(legacy_vars)
-        bodies.append(render_markdown(body, file_context, doc_dir))
+        current_context.update(legacy_vars)
+        rendered_body = render_markdown(body, current_context, doc_dir)
+        return metadata, rendered_body
 
-    return {}, "\n\n".join(bodies)
+    return {}, ""
 
 
 def main():
