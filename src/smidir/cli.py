@@ -179,11 +179,21 @@ def resolve_content(doc_dir: Path, inherited_vars: dict = None) -> tuple[dict, s
         # We can adjust: inherited_vars <- content_vars <- vars_yml
         current_context = {**inherited_vars, **content_vars, **local_vars}
 
-        contents = yml_data.get("contents", [])
+        if "contents" not in yml_data:
+            raise KeyError(f"Missing 'contents' key in {content_yml}")
+        contents = yml_data["contents"]
+        if not isinstance(contents, list):
+            raise ValueError(f"'contents' must be a list in {content_yml}")
+
         bodies = []
         for item in contents:
             item_path = doc_dir / item
-            if item_path.is_file() and item_path.suffix == ".md":
+            if not item_path.exists():
+                raise FileNotFoundError(f"Content item not found: {item_path}")
+
+            if item_path.is_file():
+                if item_path.suffix != ".md":
+                    raise ValueError(f"File {item_path} is not a markdown file")
                 meta, body = parse_frontmatter(item_path)
                 # For individual files, we use their own frontmatter but current_context as base
                 file_context = {**current_context, **meta}

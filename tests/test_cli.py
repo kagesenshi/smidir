@@ -69,3 +69,24 @@ def test_directory_merging_auto(test_data_dir):
     _, body = resolve_content(test_data_dir)
     # Should be sorted: a.md then b.md
     assert "Body A\n\nBody B" in body
+
+def test_resolve_content_yml_missing_contents(test_data_dir):
+    (test_data_dir / "content.yml").write_text("vars:\n  a: b", encoding="utf-8")
+    with pytest.raises(KeyError, match="Missing 'contents' key"):
+        resolve_content(test_data_dir)
+
+def test_resolve_content_yml_contents_not_list(test_data_dir):
+    (test_data_dir / "content.yml").write_text("contents: not-a-list", encoding="utf-8")
+    with pytest.raises(ValueError, match="'contents' must be a list"):
+        resolve_content(test_data_dir)
+
+def test_resolve_content_yml_item_not_found(test_data_dir):
+    (test_data_dir / "content.yml").write_text("contents:\n  - missing.md", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="not found"):
+        resolve_content(test_data_dir)
+
+def test_resolve_content_yml_non_markdown_file(test_data_dir):
+    (test_data_dir / "content.yml").write_text("contents:\n  - data.txt", encoding="utf-8")
+    (test_data_dir / "data.txt").write_text("some data", encoding="utf-8")
+    with pytest.raises(ValueError, match="is not a markdown file"):
+        resolve_content(test_data_dir)
