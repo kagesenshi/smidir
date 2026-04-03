@@ -11,10 +11,20 @@ local function get_hash(content)
   return pandoc.sha1(content)
 end
 
--- Generate a unique temporary directory for images
--- os.tmpname() returns a path to a file, so we remove it and create a directory
-local img_dir = os.tmpname()
-os.execute('rm -f ' .. img_dir .. ' && mkdir -p ' .. img_dir)
+-- Define cache directory from environment variable if available
+local cache_dir = os.getenv('SMIDIR_CACHE_DIR')
+local img_dir
+
+if cache_dir then
+  img_dir = cache_dir
+  -- Ensure cache directory exists, do NOT remove it
+  os.execute('mkdir -p ' .. img_dir)
+else
+  -- Fallback to temporary directory for this run
+  -- os.tmpname() returns a path to a file, so we remove it and create a directory
+  img_dir = os.tmpname()
+  os.execute('rm -f ' .. img_dir .. ' && mkdir -p ' .. img_dir)
+end
 
 function CodeBlock(block)
   if block.classes:includes('mermaid') then
